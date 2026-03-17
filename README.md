@@ -1,88 +1,85 @@
 # 🎌 Anime API Proxy
 
-A fast, production-ready REST API proxy that aggregates anime data from multiple upstream sources — including **HiAnime**, **AnimePahe**, **AniList**, and more — into a single, unified interface.
+> A production-ready FastAPI proxy that unifies anime metadata and multi-source streaming — HiAnime, AnimePahe, AniList — into one clean API.
 
-Built with **FastAPI** and deployable to **Vercel** or **Docker**.
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
+![License](https://img.shields.io/badge/License-Personal%20Use-e84393?style=flat-square)
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/anime-api-proxy)
 
 ---
 
 ## 📑 Table of Contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Upstream Sources](#upstream-sources)
-- [Getting Started](#getting-started)
-  - [Local Development](#local-development)
-  - [Docker](#docker)
-  - [Deploy to Vercel](#deploy-to-vercel)
-- [API Reference](#api-reference)
-  - [GET /](#get-)
-  - [GET /home](#get-home)
-  - [GET /search](#get-search)
-  - [GET /info](#get-info)
-  - [GET /stream/{id}/{index}](#get-streamidindex)
-- [Response Schemas](#response-schemas)
-- [Error Handling](#error-handling)
-- [Environment & Configuration](#environment--configuration)
-- [Project Structure](#project-structure)
-- [Known Limitations](#known-limitations)
+- [Overview](#-overview)
+- [Architecture](#-architecture)
+- [Upstream Sources](#-upstream-sources)
+- [Getting Started](#-getting-started)
+- [API Reference](#-api-reference)
+- [Error Handling](#-error-handling)
+- [Project Structure](#-project-structure)
+- [Known Limitations](#-known-limitations)
 
 ---
 
-## Overview
+## ✨ Overview
 
-Anime API Proxy is a backend service that wraps several anime data and streaming sources under one clean API. Instead of calling multiple third-party APIs from your frontend, you call this proxy once and receive a fully merged response containing:
+Anime API Proxy sits between your frontend and several third-party anime data sources. Instead of juggling multiple APIs and CORS issues from the client, you call this proxy once and receive a fully merged, normalized response.
 
-- Anime metadata (title, synopsis, genres, score, etc.)
-- High-resolution poster and banner images from AniList
-- Related anime entries (sequels, prequels, side stories)
-- Season groupings
-- Merged episode lists from both AnimePahe and HiAnime
-- Multi-server, multi-type (sub/dub) streaming links
+| Feature | Detail |
+| :--- | :--- |
+| 🎨 **Enriched Metadata** | High-res posters, banners, and cover colors from AniList GraphQL |
+| 🔀 **Merged Episode Lists** | AnimePahe and HiAnime episode IDs aligned by index into one list |
+| 📡 **Multi-Server Streams** | 3 HiAnime servers × sub + dub fetched in parallel via `ThreadPoolExecutor` |
+| 📼 **AnimePahe Downloads** | Direct download URLs with properly formatted filenames injected server-side |
+| 🔗 **Related Anime** | Sequels, prequels, side stories, and spin-offs from AniList relations |
+| 🛡️ **Graceful Degradation** | Partial upstream failures return inline error objects — never a crash |
+| 🌐 **CORS Ready** | Open CORS headers on all routes — callable from any browser frontend |
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
-Client
-  │
-  ▼
-Anime API Proxy  (this project)
-  ├── /search      →  anime-api (HiAnime wrapper)
-  ├── /home        →  anime-api (HiAnime wrapper)
-  ├── /info        →  anime-api  +  AniList GraphQL  +  AniList Mapper  +  AniScrap Seasons
-  └── /stream      →  anime-api (HiAnime streams, 3 servers × sub/dub in parallel)
-                   →  AniScrap (AnimePahe resolve)
-                   →  AniList Mapper (episode ID mapping)
+                     ┌──────────────────────────────┐
+                     │       Anime API Proxy         │
+                     │   (this project — FastAPI)    │
+                     └──────────────┬───────────────┘
+                                    │
+         ┌──────────────────────────┼──────────────────────────┐
+         │                          │                          │
+  ┌──────▼──────┐          ┌────────▼────────┐       ┌────────▼────────┐
+  │  /search    │          │  /info          │       │  /stream/{id}/  │
+  │  /home      │          │                 │       │  {index}        │
+  └──────┬──────┘          └────────┬────────┘       └────────┬────────┘
+         │                          │                          │
+  anime-api.vercel         anime-api + AniList          AniList Mapper
+                           + AniList Mapper             + AniScrap resolve
+                           + AniScrap seasons           + HiAnime x6 parallel
 ```
 
-The `/info` and `/stream` endpoints perform **parallel upstream requests** using `ThreadPoolExecutor` to minimize response latency.
+> `/info` and `/stream` run multiple upstream calls **concurrently** to minimize response latency.
 
 ---
 
-## Upstream Sources
+## 🔗 Upstream Sources
 
-| Source                   | URL                                              | Used For                         |
-| ------------------------ | ------------------------------------------------ | -------------------------------- |
-| anime-api                | `https://anime-api-iota-six.vercel.app/api`      | Core anime data, HiAnime streams |
-| AniList GraphQL          | `https://graphql.anilist.co`                     | Posters, banners, related anime  |
-| AniList Mapper (Pahe)    | `https://anilistmapper.vercel.app/animepahe/map` | AnimePahe episode ID mapping     |
-| AniList Mapper (HiAnime) | `https://anilistmapper.vercel.app/hianime`       | HiAnime episode ID mapping       |
-| AniScrap Seasons         | `https://catapang1989-aniscrap.hf.space/seasons` | Season grouping data             |
-| AniScrap Resolve         | `https://catapang1989-aniscrap.hf.space/resolve` | AnimePahe stream resolution      |
+| Source | Base URL | Used For |
+| :--- | :--- | :--- |
+| `anime-api` | `anime-api-iota-six.vercel.app/api` | Core anime data, HiAnime streams |
+| `AniList GraphQL` | `graphql.anilist.co` | Posters, banners, cover colors, related anime |
+| `AniList Mapper — Pahe` | `anilistmapper.vercel.app/animepahe/map` | AnimePahe episode ID mapping |
+| `AniList Mapper — HiAnime` | `anilistmapper.vercel.app/hianime` | HiAnime episode ID mapping |
+| `AniScrap Seasons` | `catapang1989-aniscrap.hf.space/seasons` | Season grouping data |
+| `AniScrap Resolve` | `catapang1989-aniscrap.hf.space/resolve` | AnimePahe stream resolution & download URLs |
 
----
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.10 or higher
-- pip
-- (Optional) Docker
+> All upstream calls are server-side — zero CORS leakage to the client.
 
 ---
+
+## 🚀 Getting Started
 
 ### Local Development
 
@@ -99,37 +96,30 @@ cd anime-api-proxy
 pip install -r requirements.txt
 ```
 
-**3. Run the development server**
+**3. Start the server**
 
 ```bash
 uvicorn main:app --reload
 ```
 
-The API will be live at `http://localhost:8000`.
-
-Interactive API docs (Swagger UI) are available at `http://localhost:8000/docs`.
+| Interface | URL |
+| :--- | :--- |
+| API Root | `http://localhost:8000` |
+| Swagger UI | `http://localhost:8000/docs` |
+| ReDoc | `http://localhost:8000/redoc` |
 
 ---
 
 ### Docker
 
-**Build the image**
-
 ```bash
+# Build the image
 docker build -t anime-proxy .
-```
 
-**Run the container**
-
-```bash
+# Run
 docker run -p 8000:8000 anime-proxy
-```
 
-The API will be available at `http://localhost:8000`.
-
-**Run in detached mode**
-
-```bash
+# Run in detached mode
 docker run -d -p 8000:8000 --name anime-proxy anime-proxy
 ```
 
@@ -137,9 +127,12 @@ docker run -d -p 8000:8000 --name anime-proxy anime-proxy
 
 ### Deploy to Vercel
 
-> ⚠️ Vercel's free (Hobby) tier has a **10-second function timeout**. The `/stream` endpoint runs 6+ parallel upstream requests and may approach this limit. Upgrade to Pro (60s timeout) if you encounter timeouts.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/anime-api-proxy)
 
-**1. Add a `vercel.json` to the project root**
+> [!WARNING]
+> Vercel's free Hobby tier enforces a **10-second function timeout**. The `/stream` endpoint runs 6+ parallel upstream requests and may hit this limit. Upgrade to **Pro** (60s timeout) for reliable stream serving.
+
+**1. Add `vercel.json` to your project root**
 
 ```json
 {
@@ -158,22 +151,20 @@ docker run -d -p 8000:8000 --name anime-proxy anime-proxy
 }
 ```
 
-**2. Install the Vercel CLI and deploy**
+**2. Deploy via CLI**
 
 ```bash
 npm i -g vercel
 vercel
 ```
 
-**3. Follow the prompts.** Your API will be deployed to a URL like `https://your-project.vercel.app`.
-
 ---
 
-## API Reference
+## 📖 API Reference
 
-### GET `/`
+### `GET /`
 
-Health check. Returns the running status of the proxy.
+Health check. Confirms the proxy is running.
 
 **Response**
 
@@ -186,25 +177,21 @@ Health check. Returns the running status of the proxy.
 
 ---
 
-### GET `/home`
+### `GET /home`
 
-Returns the homepage data from the upstream anime API — typically trending, popular, and recently updated anime.
-
-**Response**
-
-Returns the raw upstream homepage payload.
+Returns homepage data from the upstream anime API — trending, recently updated, and top-airing anime. Response is proxied directly with no transformation.
 
 ---
 
-### GET `/search`
+### `GET /search`
 
 Search for anime by title keyword.
 
 **Query Parameters**
 
-| Parameter | Type   | Required | Description                   |
-| --------- | ------ | -------- | ----------------------------- |
-| `keyword` | string | ✅       | The anime title to search for |
+| Parameter | Type | Required | Description |
+| :--- | :---: | :---: | :--- |
+| `keyword` | `string` | ✅ | Anime title to search for |
 
 **Example Request**
 
@@ -223,7 +210,10 @@ GET /search?keyword=jujutsu+kaisen
       "title": "Jujutsu Kaisen",
       "poster": "https://...",
       "type": "TV",
-      "episodes": { "sub": 47, "dub": 47 }
+      "episodes": {
+        "sub": 47,
+        "dub": 47
+      }
     }
   ]
 }
@@ -231,15 +221,15 @@ GET /search?keyword=jujutsu+kaisen
 
 ---
 
-### GET `/info`
+### `GET /info`
 
-Returns full anime details including metadata, poster/banner from AniList, related anime, seasons, and a merged episode list from both AnimePahe and HiAnime.
+Returns full anime details — metadata, AniList poster/banner/color, related anime, seasons, and a merged episode list from AnimePahe and HiAnime.
 
 **Query Parameters**
 
-| Parameter | Type   | Required | Description                                     |
-| --------- | ------ | -------- | ----------------------------------------------- |
-| `id`      | string | ✅       | The anime slug ID (e.g. `jujutsu-kaisen-20401`) |
+| Parameter | Type | Required | Description |
+| :--- | :---: | :---: | :--- |
+| `id` | `string` | ✅ | Anime slug ID e.g. `jujutsu-kaisen-20401` |
 
 **Example Request**
 
@@ -272,7 +262,10 @@ GET /info?id=jujutsu-kaisen-20401
       {
         "relationType": "SEQUEL",
         "id": 166871,
-        "title": { "romaji": "Jujutsu Kaisen 2nd Season", "english": "Jujutsu Kaisen Season 2" },
+        "title": {
+          "romaji": "Jujutsu Kaisen 2nd Season",
+          "english": "Jujutsu Kaisen Season 2"
+        },
         "format": "TV",
         "status": "FINISHED",
         "episodes": 23,
@@ -281,7 +274,7 @@ GET /info?id=jujutsu-kaisen-20401
     ],
     "seasons": {
       "total": 2,
-      "seasons": [...]
+      "seasons": ["..."]
     }
   },
   "episodes": {
@@ -290,8 +283,15 @@ GET /info?id=jujutsu-kaisen-20401
     "data": [
       {
         "index": 1,
-        "pahe": { "episodeId": "abc123.../def456...", "number": 1 },
-        "hianime": { "episodeId": "jujutsu-kaisen-20401?ep=168082", "number": 1, "title": "Ryomen Sukuna" }
+        "pahe": {
+          "episodeId": "abc123.../def456...",
+          "number": 1
+        },
+        "hianime": {
+          "episodeId": "jujutsu-kaisen-20401?ep=168082",
+          "number": 1,
+          "title": "Ryomen Sukuna"
+        }
       }
     ]
   }
@@ -300,16 +300,16 @@ GET /info?id=jujutsu-kaisen-20401
 
 ---
 
-### GET `/stream/{id}/{index}`
+### `GET /stream/{id}/{index}`
 
-Fetches all available streaming links for a specific episode. Returns AnimePahe (direct download + stream) and HiAnime (3 servers × sub/dub) links in one response.
+Fetches all streaming links for a specific episode. Returns AnimePahe (stream + download) and HiAnime (3 servers × sub/dub = 6 total) merged in one response. All HiAnime calls are made **in parallel**.
 
 **Path Parameters**
 
-| Parameter | Type    | Required | Description                                     |
-| --------- | ------- | -------- | ----------------------------------------------- |
-| `id`      | string  | ✅       | The anime slug ID (e.g. `jujutsu-kaisen-20401`) |
-| `index`   | integer | ✅       | 1-based episode number                          |
+| Parameter | Type | Required | Description |
+| :--- | :---: | :---: | :--- |
+| `id` | `string` | ✅ | Anime slug ID e.g. `jujutsu-kaisen-20401` |
+| `index` | `integer` | ✅ | 1-based episode number |
 
 **Example Request**
 
@@ -341,113 +341,115 @@ GET /stream/jujutsu-kaisen-20401/1
           "error": false,
           "server": "hd-1",
           "serverName": "MegaCloud",
-          "file": "https://...m3u8",
+          "file": "https://...master.m3u8",
           "type": "hls",
           "tracks": [
-            { "file": "https://...en.vtt", "label": "English", "kind": "captions", "default": true }
+            {
+              "file": "https://...en.vtt",
+              "label": "English",
+              "kind": "captions",
+              "default": true
+            }
           ],
           "intro": { "start": 0, "end": 88 },
           "outro": { "start": 1320, "end": 1380 }
         },
-        "hd-2": { "error": false, ... },
-        "hd-3": { "error": true, "message": "Server hd-3 (sub) returned no stream data" }
+        "hd-2": { "error": false },
+        "hd-3": {
+          "error": true,
+          "message": "Server hd-3 (sub) returned no stream data"
+        }
       },
       "dub": {
-        "hd-1": { "error": false, ... },
-        "hd-2": { "error": true, ... },
-        "hd-3": { "error": true, ... }
+        "hd-1": { "error": false },
+        "hd-2": { "error": true },
+        "hd-3": { "error": true }
       }
     }
   }
 }
 ```
 
-#### Stream Notes
+**Stream Notes**
 
-- **HiAnime streams** use HLS (`.m3u8`) format and require an HLS-compatible player (e.g. `hls.js`, `Video.js`, `Plyr`).
-- **AnimePahe streams** provide a direct download URL and a stream URL.
-- `intro` and `outro` fields contain timestamps (in seconds) for skip-intro/skip-outro features.
-- `tracks` contains subtitle/caption track URLs in WebVTT format.
-- If a server fails, it returns `{ "error": true, "message": "..." }` — it will never be `null`, so clients can safely iterate all servers.
+> [!NOTE]
+> - HiAnime streams use **HLS (`.m3u8`)** — requires `hls.js`, `Video.js`, or `Plyr` on the client
+> - `intro` / `outro` contain timestamps in **seconds** — use these for skip intro/outro UI
+> - `tracks` contains **WebVTT** subtitle URLs — pass directly to your player's track API
+> - HLS links are **time-limited** — never cache stream responses, always fetch fresh
+> - A failed server always returns `{ "error": true, "message": "..." }` — never `null` — safe to iterate all keys
+> - Fall through servers `hd-1 → hd-2 → hd-3` until one returns `error: false`
 
 ---
 
-## Response Schemas
+## ⚠️ Error Handling
 
-### Error Response
-
-All errors follow this structure:
+All errors follow FastAPI's standard structure:
 
 ```json
 {
-  "detail": "Human-readable error message here."
+  "detail": "Human-readable error message."
 }
 ```
 
-| HTTP Status | Meaning                                                           |
-| ----------- | ----------------------------------------------------------------- |
-| `400`       | Bad request / missing required parameter                          |
-| `404`       | Resource not found (anime ID invalid, episode index out of range) |
-| `502`       | Upstream API returned an error or invalid response                |
-| `504`       | Upstream API request timed out                                    |
+**HTTP Status Codes**
+
+| Status | Meaning | Cause |
+| :---: | :--- | :--- |
+| `400` | Bad Request | Missing required query parameter |
+| `404` | Not Found | Invalid anime ID or episode index out of range |
+| `502` | Bad Gateway | Upstream returned an error, invalid JSON, or refused connection |
+| `504` | Gateway Timeout | Upstream request exceeded the 10-second timeout |
+
+**Partial Failure Behavior**
+
+| Layer | Behavior |
+| :--- | :--- |
+| Connection error | Raises `502 Bad Gateway` |
+| Upstream timeout | Raises `504 Gateway Timeout` |
+| HiAnime server failure | Returns `{ "error": true }` inline — overall response stays `200 OK` |
+| AnimePahe resolve failure | Sets `streams.pahe` to `null` — HiAnime streams still returned |
+| AniList failure | Falls back to `null` for poster/banner/related — core data still returned |
 
 ---
 
-## Error Handling
-
-The proxy handles upstream failures gracefully:
-
-- **Connection errors** → `502 Bad Gateway`
-- **Upstream timeouts** → `504 Gateway Timeout`
-- **Upstream HTTP errors** → `502` with the upstream status code in the detail
-- **Invalid upstream JSON** → `502`
-- **HiAnime server failures** → included inline in the response as `{ "error": true }` objects rather than crashing the entire request. This means a partial response is always returned even if some servers are unavailable.
-- **AnimePahe resolve failure** → `pahe` key in the stream response will be `null`. The HiAnime streams will still be returned.
-
----
-
-## Environment & Configuration
-
-No environment variables are required for basic operation. All upstream URLs are hardcoded constants in `main.py`:
-
-```python
-BASE_URL       = "https://anime-api-iota-six.vercel.app/api"
-PAHE_MAP_URL   = "https://anilistmapper.vercel.app/animepahe/map"
-HIANIME_MAP_URL= "https://anilistmapper.vercel.app/hianime"
-ANILIST_URL    = "https://graphql.anilist.co"
-SEASONS_URL    = "https://catapang1989-aniscrap.hf.space/seasons"
-PAHE_RESOLVE   = "https://catapang1989-aniscrap.hf.space/resolve"
-```
-
-If you want to override these (e.g., to point to your own upstream forks), you can refactor them to read from environment variables using `os.getenv()`.
-
----
-
-## Project Structure
+## 🗂️ Project Structure
 
 ```
 anime-api-proxy/
-├── main.py            # FastAPI application — all routes and helpers
-├── requirements.txt   # Python dependencies
-├── Dockerfile         # Container build definition
-├── vercel.json        # Vercel deployment config (add manually, see deploy section)
-└── README.md          # This file
+│
+├── main.py              # FastAPI app — all routes, helpers, upstream logic
+├── requirements.txt     # Python dependencies
+├── Dockerfile           # Container build definition
+├── vercel.json          # Vercel deployment config (add manually)
+└── README.md            # This file
 ```
 
----
+**`requirements.txt`**
 
-## Known Limitations
+```
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+requests==2.32.3
+```
 
-| Limitation                 | Detail                                                                                                                       |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Vercel 10s timeout**     | Free tier may timeout on `/stream` due to 6 parallel upstream calls. Use Vercel Pro or self-host via Docker for reliability. |
-| **HiAnime stream expiry**  | HLS `.m3u8` links are time-limited. Do not cache stream responses — always fetch fresh.                                      |
-| **AnimePahe availability** | AnimePahe episode coverage varies per anime. The `pahe` key in `/stream` may be `null` for some titles.                      |
-| **No auth layer**          | The API is fully open. If deploying publicly, consider adding an API key middleware.                                         |
-| **Upstream dependency**    | All data depends on third-party upstream services. If any upstream goes down, related endpoints will degrade or fail.        |
+> No environment variables required. All upstream URLs are constants in `main.py`. Swap them to `os.getenv()` if you need to override per environment.
 
 ---
 
-## License
+## 🚧 Known Limitations
 
-This project is for personal/educational use. Respect the terms of service of all upstream APIs used.
+| # | Limitation | Detail |
+| :---: | :--- | :--- |
+| 1 | **Vercel 10s Timeout** | Free tier may timeout on `/stream` (6 parallel calls). Use Vercel Pro or Docker. |
+| 2 | **HLS Link Expiry** | HiAnime `.m3u8` links are short-lived. Never cache stream responses. |
+| 3 | **AnimePahe Coverage** | Not all anime have Pahe episodes. `streams.pahe` may be `null`. |
+| 4 | **No Auth Layer** | API is fully open. Add API key middleware before public deployment. |
+| 5 | **Upstream Dependency** | Relies on 6 third-party services. No local caching included by default. |
+
+> [!CAUTION]
+> If deploying publicly without authentication, your proxy can be abused to hammer upstream services. Add rate limiting or an API key check before going live.
+
+---
+
+*For personal and educational use — respect the Terms of Service of all upstream APIs consumed by this proxy.*
