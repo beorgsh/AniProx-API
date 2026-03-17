@@ -7,6 +7,8 @@ Run locally: uvicorn main:app --reload
 import requests
 import json
 from concurrent.futures import ThreadPoolExecutor
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -273,10 +275,23 @@ def fetch_hianime_all(episode_id: str) -> dict:
 # Routes
 # ---------------------------------------------------------------------------
 
+app = FastAPI(
+    title="Anime API Proxy",
+    description="Proxy API for anime data",
+    version="1.0.0",
+)
 
-@app.get("/")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/", include_in_schema=False)
 def root():
-    return {"status": "ok", "message": "Anime API Proxy is running."}
+    return FileResponse("index.html")
 
 
 @app.get("/home")
